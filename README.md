@@ -12,7 +12,7 @@ Example python code that allows you to reset all yours risks to xx days from tod
 ## Command Line Parameters
 | Parameter | Mandatory? | Example | Environment Variable Name | Usage |
 |---|---|---|---|---|
-| days | N | 30 | DAYS | Any risks with an expiration date > "Today + \<DAYS\>" will be set to "Today + \<DAYS\>".  I.E, if a risk is 60 days into the future when days=30, it will have its expiration date set to "Today + 30 days" |
+| days | N | 30 | DAYS | Any risks with an expiration date > "Today + \<DAYS\>" will be set to "Today + \<DAYS\>".  I.E, if a risk expiration is 60 days into the future when days=30, it will have its expiration date set to "Today + 30 days" |
 | apiurl | N | https://app.au1.sysdig.com | API_URL | Base API URL to use Will also attempt to retrieve from API_URL environment variable if not specified here |
 
 ## Passing API Token
