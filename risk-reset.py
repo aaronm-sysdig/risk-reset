@@ -20,8 +20,10 @@ def sysdig_request(method, url, headers, params=None, _json=None) -> requests.Re
     except requests.exceptions.HTTPError as e:
         print(" ERROR ".center(80, "-"))
         print(e)
+        exit(1)
     except requests.exceptions.RequestException as e:
         print(e)
+        exit(1)
 
     return objResult
 
@@ -32,29 +34,29 @@ def main() -> None:
                            type=int,
                            default=os.environ.get('DAYS', None),
                            help='Reset acceptances > <DAYS> from today to <DAYS> (Default: DAYS Environment Variable)')
-    objParser.add_argument('--apitoken',
-                           required=False,
-                           type=str,
-                           default=os.environ.get('SECURE_API_TOKEN', None),
-                           help='API token (Default: SECURE_API_TOKEN environment variable)')
-    objParser.add_argument('--apiurl',
+    objParser.add_argument('--api_url',
                            required=False,
                            type=str,
                            default=os.environ.get('API_URL', None),
                            help='API URL I.E https://app.au1.sysdig.com (Default: API_URL Environmenet variable')
 
     objArgs = objParser.parse_args()
-    if objArgs.apitoken is None or objArgs.days is None or objArgs.apiurl is None:
+    if objArgs.days is None or objArgs.api_url is None:
         objParser.parse_args(['--help'])
         exit(1)
 
-    auth_header = {
-        "Authorization": f"Bearer {objArgs.apitoken}",
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-    }
+    api_token = os.environ.get('SECURE_API_TOKEN')
+    if api_token is not None:
+        auth_header = {
+            "Authorization": f"Bearer {api_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+    else:
+        print('Please set the SECURE_API_TOKEN environment variable to continue')
+        exit(1)
 
-    api_url = objArgs.apiurl
+    api_url = objArgs.api_url
     strRiskURL = f"{api_url}/api/scanning/riskmanager/v2/definitions"
     arrExistingRisks = []
 
