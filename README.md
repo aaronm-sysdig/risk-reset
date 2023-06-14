@@ -9,17 +9,29 @@ Example python code that allows you to reset all yours risks to xx days from tod
 
 
 
-## Parameters
+## Command Line Parameters
+| Parameter | Mandatory? | Example | Environment Variable Name | Usage |
+|---|---|---|---|---|
+| days | N | 30 | DAYS | Any risks with an expiration date > "Today + \<DAYS\>" will be set to "Today + \<DAYS\>".  I.E, if a risk is 60 days into the future when days=30, it will have its expiration date set to "Today + 30 days" |
+| apiurl | N | https://app.au1.sysdig.com | API_URL | Base API URL to use Will also attempt to retrieve from API_URL environment variable if not specified here |
 
+## Passing API Token
+Your SYSDIG API TOKEN needs to be set as the 'SECURE_API_TOKEN' environment variable.  You will receive an error if this is not the case
 
-| Parameter | Mandatory? | Example | Usage |
-|---|---|---|---|
-| days | Y | 30 | Number of days that you wish to extend all risks by |
-| apiurl | Y | https://app.au1.sysdig.com | Base API URL to use |
-| apitoken | N | 238b5402-9354-405a-8d62-08c5ce5d3e68 | Your API token.  Will also attempt to retrieve from SECURE_API_TOKEN environment variable if not specified here|
+```
+Please set the SECURE_API_TOKEN environment variable to continue
+```
 
 ## Usage
 ```
 pip3 install -r requirements.txt
-python3 risk-reset.py --days xx --apiurl https://app.xxx.sysdig.com --apitoken 238b5402-9354-405a-8d62-08c5ce5d3e68
+python3 risk-reset.py --days xx --apiurl https://app.xxx.sysdig.com
+```
+
+## Example Output
+
+```
+SUCCESS: 'CVE-2018-8088' updated to '2023-07-14'
+
+Done, have a nice day! 
 ```
