@@ -51,7 +51,6 @@ def main() -> None:
         "Accept": "application/json"
     }
 
-    api_token = objArgs.apitoken
     api_url = objArgs.apiurl
     strRiskURL = f"{api_url}/api/scanning/riskmanager/v2/definitions"
     arrExistingRisks = []
