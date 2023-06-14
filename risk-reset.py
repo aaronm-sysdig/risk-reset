@@ -1,133 +1,87 @@
-import copy
-import csv
 import datetime
-import json
+import sys
+import argparse
 import os
 import requests
 import time
 
 SLEEP_429_SECONDS = 30
 
-auth_header = {
-    "Authorization": f"Bearer {os.environ.get('SECURE_API_TOKEN', None)}",
-    "Content-Type": "application/json",
-    "Accept": "application/json"
-}
 
-payload = {
-    "riskAcceptanceDefinitions": [
-        {
-            "entityType": "vulnerability",
-            "entityValue": "",
-            "expirationDate": "",
-            "context": [],
-            "reason": "",
-            "description": ""
-        }
-    ]
-}
+def sysdig_request(method, url, headers, params=None, _json=None) -> requests.Response:
+    objResult = requests.Response
+    try:
+        objResult = requests.request(method=method, url=url, headers=headers, params=params, json=_json)
+        objResult.raise_for_status()
+        while objResult.status_code == 429:
+            print(f"Got status 429, Sleeping for {SLEEP_429_SECONDS} seconds before trying again")
+            time.sleep(SLEEP_429_SECONDS)
+            objResult = requests.request(method=method, url=url, headers=headers, params=params, json=_json)
+    except requests.exceptions.HTTPError as e:
+        print(" ERROR ".center(80, "-"))
+        print(e)
+    except requests.exceptions.RequestException as e:
+        print(e)
 
-
-def sysdig_request(method, url, headers, _json={}) -> requests.Response:
-    objResult = requests.request(method=method, url=url, headers=headers, json=_json)
-    while objResult.status_code == 429:
-        print(f"Got status 429, Sleeping for {SLEEP_429_SECONDS} seconds before trying again")
-        time.sleep(SLEEP_429_SECONDS)
-        objResult = requests.request(method=method, url=url, headers=headers, json=_json)
     return objResult
 
 
 def main() -> None:
-    print(f"Processing Input File '{risks_csv}'")
-    with open(risks_csv) as csvfile:
-        arrRisks = list(csv.reader(csvfile, delimiter=','))
+    objParser = argparse.ArgumentParser(description='Risk Reset')
+    objParser.add_argument('--days', required=True,
+                           type=int,
+                           default=30,
+                           help='Reset all acceptance dates to xx days in advance of today (Default: 30')
+    objParser.add_argument('--apitoken',
+                           required=False,
+                           type=str,
+                           default=os.environ.get('SECURE_API_TOKEN', None),
+                           help='API token (Default: SECURE_API_TOKEN environment variable)')
+    objParser.add_argument('--apiurl',
+                           required=True,
+                           type=str,
+                           help='API URL (i.e https://app.au1.sysdig.com)')
 
-    # Ignore header row
-    arrRisks.pop(0)
+    objParser.parse_args(args=None if sys.argv[1:] else ['--help'])
+    objArgs = objParser.parse_args()
 
-    arrPayload = []
+    auth_header = {
+        "Authorization": f"Bearer {objArgs.apitoken}",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
 
-    for row in arrRisks:
-        # Checking if expiration is no greater than the max_days
-        expirationDate = datetime.datetime.strptime(row[1], '%Y-%m-%d').date()
-        maxExpirationDate = datetime.date.today() + datetime.timedelta(days=int(max_days))
-        if expirationDate > maxExpirationDate:
-            print(f"ERROR: Expiration Date for {row[0]} of {expirationDate} exceeds the maximum ({max_days}) days, I.E {maxExpirationDate}")
-            exit(1)
-        # Global
-        objRisk = copy.deepcopy(payload)
-        objRisk['riskAcceptanceDefinitions'][0]['entityValue'] = row[0]
-        objRisk['riskAcceptanceDefinitions'][0]['expirationDate'] = row[1]
-        objRisk['riskAcceptanceDefinitions'][0]['reason'] = row[2]
-        objRisk['riskAcceptanceDefinitions'][0]['description'] = row[3]
+    api_token = objArgs.apitoken
+    api_url = objArgs.apiurl
+    strRiskURL = f"{api_url}/api/scanning/riskmanager/v2/definitions"
+    arrExistingRisks = []
 
-        # Package - No Version
-        if row[4] != '':
-            objRisk['riskAcceptanceDefinitions'][0]['context'].append(
-                {
-                    "contextType": "packageName",
-                    "contextValue": str(row[4])
-                })
+    # Retrieve list of current risks
+    objResult = sysdig_request(method='GET', url=strRiskURL, params={'limit': 2}, headers=auth_header)
+    print(objResult.status_code)
+    while objResult.json()['page']['next'] != "":
+        for row in objResult.json()['data']:
+            arrExistingRisks.append(row)
+        objResult = sysdig_request(method='GET',
+                                   url=strRiskURL,
+                                   params={'cursor': objResult.json()['page']['next'], 'limit': 2},
+                                   headers=auth_header)
 
-        # Package - Version
-        if row[5] != '':
-            objRisk['riskAcceptanceDefinitions'][0]['context'].append(
-                {
-                    "contextType": "packageVersion",
-                    "contextValue": str(row[5])
-                })
+    # Reset days
+    rem_list = ['createdAt', 'updatedAt', 'status', 'riskAcceptanceDefinitionID']
 
-        # Image
-        if row[6] != '':
-            objRisk['riskAcceptanceDefinitions'][0]['context'].append(
-                {
-                    "contextType": "imageName",
-                    "contextValue": str(row[6])
-                })
-
-        arrPayload.append(objRisk)
-
-    strAddRiskURL = f"{api_url}/api/scanning/riskmanager/v2/definitions"
-    for row in arrPayload:
-        # Check for existing Risk
-        strCheckRiskURL = f"{api_url}/api/scanning/riskmanager/v2/definitions?cursor=&filter=freeText+in+%28%22"\
-                          f"{row['riskAcceptanceDefinitions'][0]['entityValue']}"\
-                          f"%22%29&limit=100&sort=acceptanceDate&order=desc"
-        objResult = sysdig_request(method='GET', url=strCheckRiskURL, headers=auth_header)
-        if objResult.status_code == 200:
-            objJsonResult = json.loads(objResult.text)
-            if objJsonResult['page']['matched'] > 0:
-                # I.E we found one
-                strDeleteRiskURL = f"https://app.au1.sysdig.com/api/scanning/riskmanager/v2/definitions/"\
-                                   f"{objJsonResult['data'][0]['riskAcceptanceDefinitionID']}"
-                # Now we delete it
-                objResult = sysdig_request(method='DELETE', url=strDeleteRiskURL, headers=auth_header)
-                print(f"Delete Status: {objResult.status_code}, CVE: {json.loads(objResult.text)['entityValue']}")
-                time.sleep(1)  # gives backend to sync
-        objResult = sysdig_request(method='POST', url=strAddRiskURL, headers=auth_header, _json=row)
-        if objResult.status_code == 201:
-            print(f"Create Status: {objResult.status_code}, "
-                        f"CVE: {json.loads(objResult.text)['riskAcceptanceDefinitions'][0]['entityValue']}, "
-                        f"Expiration Date: {json.loads(objResult.text)['riskAcceptanceDefinitions'][0]['expirationDate']}")
-        else:
-            print(f"Status: {objResult.status_code}, Error Reason: {objResult.text}")
+    for row in arrExistingRisks:
+        updated_row = row
+        riskAcceptanceDefinitionID = row['riskAcceptanceDefinitionID']
+        [updated_row.pop(key) for key in rem_list]
+        updated_row['expirationDate'] = str(datetime.date.today() + datetime.timedelta(days=int(objArgs.days)))
+        objResult = sysdig_request(method='PUT',
+                                   url=f'{strRiskURL}/{riskAcceptanceDefinitionID}',
+                                   headers=auth_header,
+                                   _json=updated_row)
+        print(objResult.status_code)
+    print("Done")
 
 
 if __name__ == "__main__":
-    secure_api_token = os.environ.get('SECURE_API_TOKEN', None)
-    max_days = os.environ.get('MAX_DAYS', None)
-    api_url = os.environ.get('API_URL', None)
-    risks_csv = os.environ.get('RISKS_CSV', None)
-    if secure_api_token is not None and max_days is not None and api_url is not None and risks_csv is not None:
-        main()
-    else:
-        if secure_api_token is None:
-            print(f"Error: API Token not set. Hint: Set 'SECURE_API_TOKEN' environment variable)")
-        if max_days is None:
-            print(f"Error: Max Days not set. Hint: Set 'MAX_DAYS' environment variable")
-        if api_url is None:
-            print(f"Error: API Url not set. Hint: Set 'API_URL' environment variable")
-        if risks_csv is None:
-            print(f"Error: Risks CSV not set. Hint: Set 'RISKS_CSV' environment variable")
-        exit(1)
-
+    main()
