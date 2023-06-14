@@ -58,7 +58,6 @@ def main() -> None:
 
     # Retrieve list of current risks
     objResult = sysdig_request(method='GET', url=strRiskURL, params={'limit': 2}, headers=auth_header)
-    print(objResult.status_code)
     while objResult.json()['page']['next'] != "":
         for row in objResult.json()['data']:
             arrExistingRisks.append(row)
@@ -79,8 +78,9 @@ def main() -> None:
                                    url=f'{strRiskURL}/{riskAcceptanceDefinitionID}',
                                    headers=auth_header,
                                    _json=updated_row)
-        print(objResult.status_code)
-    print("Done")
+        if objResult.status_code == 200:
+            print(f"SUCCESS: '{updated_row['entityValue']}' updated to '{updated_row['expirationDate']}'")
+    print("\nDone, have a nice day! ")
 
 
 if __name__ == "__main__":
