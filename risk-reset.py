@@ -61,13 +61,18 @@ def main() -> None:
     arrExistingRisks = []
 
     # Retrieve list of current risks
-    objResult = sysdig_request(method='GET', url=strRiskURL, params={'limit': 2}, headers=auth_header)
+    objResult = sysdig_request(method='GET', url=strRiskURL, params={'limit': 50}, headers=auth_header)
+    if objResult.json()['page']['returned'] > 0:
+        for row in objResult.json()['data']:
+            arrExistingRisks.append(row)
+
+    # Iterate through until we get all the rows
     while objResult.json()['page']['next'] != "":
         for row in objResult.json()['data']:
             arrExistingRisks.append(row)
         objResult = sysdig_request(method='GET',
                                    url=strRiskURL,
-                                   params={'cursor': objResult.json()['page']['next'], 'limit': 2},
+                                   params={'cursor': objResult.json()['page']['next'], 'limit': 50},
                                    headers=auth_header)
 
     # If current expiration days are > --days property, reset to --days
@@ -79,7 +84,8 @@ def main() -> None:
         [updated_row.pop(key) for key in rem_list]
         # Covers 'global' exceptions without an expiration date
         if 'expirationDate' not in row:
-            row['expirationDate'] = str(datetime.date.today())
+            row['expirationDate'] = str(datetime.date.today() +
+                                        datetime.timedelta(days=int(objArgs.days+1)))
         if datetime.date.today() < (datetime.datetime.strptime(row['expirationDate'], "%Y-%m-%d").date() -
                                     datetime.timedelta(days=int(objArgs.days))):
             updated_row['expirationDate'] = str(datetime.date.today() + datetime.timedelta(days=int(objArgs.days)))
