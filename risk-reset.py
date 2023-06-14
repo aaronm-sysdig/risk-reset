@@ -28,22 +28,25 @@ def sysdig_request(method, url, headers, params=None, _json=None) -> requests.Re
 
 def main() -> None:
     objParser = argparse.ArgumentParser(description='Risk Reset')
-    objParser.add_argument('--days', required=True,
+    objParser.add_argument('--days', required=False,
                            type=int,
-                           default=30,
-                           help='Reset all acceptance dates to xx days in advance of today (Default: 30')
+                           default=os.environ.get('DAYS', None),
+                           help='Reset acceptances > <DAYS> from today to <DAYS> (Default: DAYS Environment Variable)')
     objParser.add_argument('--apitoken',
                            required=False,
                            type=str,
                            default=os.environ.get('SECURE_API_TOKEN', None),
                            help='API token (Default: SECURE_API_TOKEN environment variable)')
     objParser.add_argument('--apiurl',
-                           required=True,
+                           required=False,
                            type=str,
-                           help='API URL (i.e https://app.au1.sysdig.com)')
+                           default=os.environ.get('API_URL', None),
+                           help='API URL I.E https://app.au1.sysdig.com (Default: API_URL Environmenet variable')
 
-    objParser.parse_args(args=None if sys.argv[1:] else ['--help'])
     objArgs = objParser.parse_args()
+    if objArgs.apitoken is None or objArgs.days is None or objArgs.apiurl is None:
+        objParser.parse_args(['--help'])
+        exit(1)
 
     auth_header = {
         "Authorization": f"Bearer {objArgs.apitoken}",
@@ -65,20 +68,25 @@ def main() -> None:
                                    params={'cursor': objResult.json()['page']['next'], 'limit': 2},
                                    headers=auth_header)
 
-    # Reset days
+    # If current expiration days are > --days property, reset to --days
     rem_list = ['createdAt', 'updatedAt', 'status', 'riskAcceptanceDefinitionID']
 
     for row in arrExistingRisks:
         updated_row = row
         riskAcceptanceDefinitionID = row['riskAcceptanceDefinitionID']
         [updated_row.pop(key) for key in rem_list]
-        updated_row['expirationDate'] = str(datetime.date.today() + datetime.timedelta(days=int(objArgs.days)))
-        objResult = sysdig_request(method='PUT',
-                                   url=f'{strRiskURL}/{riskAcceptanceDefinitionID}',
-                                   headers=auth_header,
-                                   _json=updated_row)
-        if objResult.status_code == 200:
-            print(f"SUCCESS: '{updated_row['entityValue']}' updated to '{updated_row['expirationDate']}'")
+        # Covers 'global' exceptions without an expiration date
+        if 'expirationDate' not in row:
+            row['expirationDate'] = str(datetime.date.today())
+        if datetime.date.today() < (datetime.datetime.strptime(row['expirationDate'], "%Y-%m-%d").date() -
+                                    datetime.timedelta(days=int(objArgs.days))):
+            updated_row['expirationDate'] = str(datetime.date.today() + datetime.timedelta(days=int(objArgs.days)))
+            objResult = sysdig_request(method='PUT',
+                                       url=f'{strRiskURL}/{riskAcceptanceDefinitionID}',
+                                       headers=auth_header,
+                                       _json=updated_row)
+            if objResult.status_code == 200:
+                print(f"SUCCESS: '{updated_row['entityValue']}' updated to '{updated_row['expirationDate']}'")
     print("\nDone, have a nice day! ")
 
 
